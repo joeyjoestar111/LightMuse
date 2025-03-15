@@ -3,7 +3,6 @@ import os
 import torch
 import numpy as np
 
-
 attribute_name_map = {
     "ANIMATIONINDEXROTATE": 0,
     "ANIMATIONWHEEL": 1,
@@ -136,71 +135,32 @@ class Embedding():
             print(features.shape)
             return features
 
-    @staticmethod
-    def preprocess_cue(self, data):
-        final_features = []
-        max_sequence_length = 0
-        for list in data:
-            features = []
-            for item in list:
-                if "CueDatas" in item:
-                    cue_datas = item["CueDatas"]
-                else:
-                    continue
-                for cue in cue_datas:
-                    fixture_id = int(cue["fixture_id"])
-                    attribute_name = cue["attribute_name"]
-                    if "value" in cue:
-                        value = cue["value"]
-                        if type(value) is not float:
-                            value = 0
-                        else:
-                            value = float(value)
-                    else:
-                        value = 0
-                    # Map attribute_name to index
-                    attribute_index = attribute_name_map.get(attribute_name, -1)
-                    if attribute_index == -1:
-                        raise ValueError(f"Unknown attribute_name: {attribute_name}")
 
-                    # Organize features: [fixture_id, attribute_index, value]
-                    feature = [fixture_id, attribute_index, value]
-                    features.append(feature)
-                    max_sequence_length = max(max_sequence_length, len(features))
-
-            final_features.append(features)
-
-        for f in final_features:
-            if len(f) < max_sequence_length:
-                for i in range(max_sequence_length - len(f)):
-                    f.append([0, 0, 0])
-
-        # Convert to tensor
-        final_features = np.array(final_features)
-        final_features = torch.tensor(final_features, dtype=torch.float32)
-
-        return final_features
-
-    @staticmethod
     def get_cue_embedding(self, filename):
         with open(filename, "r", encoding="utf-8") as file:
             data = json.load(file)
-            features = Embedding.preprocess_cue(data)
-            print(features)
-            print(features.shape)
+            features = self.preprocess_aligned_cue(data)
             return features
 
-    @staticmethod
     def preprocess_aligned_cue(self, data):
         final_features = []
-        max_sequence_length = 0
         for item in data:
             features = []
-            time = item["time"]
-            if "CueDatas" in item:
-                cue_datas = item["CueDatas"]
-            else:
+            # 排除时间错误的情况
+            if item["time"] is None:
                 continue
+            # 时间信息
+            time = float(item["time"]) / 30 / 0.96
+
+            # CueDatas长度信息
+            if "CueDatas" in item and type(item["CueDatas"]) == list:
+                cue_datas = item["CueDatas"]
+                cuedata_length = len(cue_datas)
+            else:
+                cuedata_length = 0
+                continue
+            
+            # CueData内具体信息
             for cue in cue_datas:
                 fixture_id = int(cue["fixture_id"])
                 attribute_name = cue["attribute_name"]
@@ -218,21 +178,13 @@ class Embedding():
                 if attribute_index == -1:
                     raise ValueError(f"Unknown attribute_name: {attribute_name}")
 
-                # Organize features: [fixture_id, attribute_index, value]
+                # 特征: [fixture_id, attribute_index, value]
                 feature = [fixture_id, attribute_index, value]
                 features.append(feature)
-                max_sequence_length = max(max_sequence_length, len(features))
 
-        final_features.append(features)
+        # 最终数据格式
+            final_features.append([time, cuedata_length, features])
 
-        for f in final_features:
-            if len(f) < max_sequence_length:
-                for i in range(max_sequence_length - len(f)):
-                    f.append([0, 0, 0])
-
-        # Convert to tensor
-        final_features = np.array(final_features)
-        final_features = torch.tensor(final_features, dtype=torch.float32)
 
         return final_features
 
@@ -247,118 +199,39 @@ class Embedding():
                 continue
             timelist.append(time)
         return timelist
+    
+    def cue_to_json(self, features, output_filename):
+        data = []
+        for item in features:
+            time = int(item[0] * 30 * 0.96) 
+            cuedata_length = item[1]
+            features_list = item[2]
+            
+            cue_datas = []
+            for feature in features_list:
+                fixture_id, attribute_index, value = feature
+                
+                # 反向映射 attribute_index 到 attribute_name
+                attribute_name = {v: k for k, v in attribute_name_map.items()}.get(attribute_index, "Unknown")
+
+                if attribute_name == "Unknown":
+                    raise ValueError(f"Unknown attribute_index: {attribute_index}")
+
+                cue_datas.append({
+                    "fixture_id": fixture_id,
+                    "attribute_name": attribute_name,
+                    "value": value
+                })
+
+            data.append({
+                "time": time,
+                "CueDatas": cue_datas
+            })
+
+        # 保存为 JSON 文件
+        with open(output_filename, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=4)
+
+        print(f"JSON file saved to {output_filename}")
+
         
-        
-
-# def preprocess_timecode(data):
-#     features = []
-#     max_sequence_length = 0
-
-#     for item in data:
-#         for subtrack in item["Subtrack"]:
-#             events = subtrack["Event"]
-#             sequence_length = len(events)
-#             max_sequence_length = max(max_sequence_length, sequence_length)
-
-#             for event in events:
-#                 time = float(event["time"]) if event["time"] is not None else 0.0
-#                 command = 1 if event["command"] == "Goto" else 0
-#                 pressed = 1 if event["pressed"] == "true" else 0
-#                 step = float(event["step"]) if event["step"] is not None else 0
-#                 if "cue" in event:
-#                     cue = list(map(float, event["cue"])) if event["cue"] is not None else [0, 0, 0]
-
-#                 feature = [time, command, pressed, step] + cue
-#                 features.append(feature)
-
-#     # 转换为张量
-#     features = np.array(features)
-#     features = torch.tensor(features, dtype=torch.float32)
-
-#     # 填充缺失值
-#     padded_features = torch.zeros((len(data), max_sequence_length, features.shape[1]))
-#     for i, item in enumerate(data):
-#         for j, subtrack in enumerate(item["Subtrack"]):
-#             events = subtrack["Event"]
-#             for k, event in enumerate(events):
-#                 time = float(event["time"]) if event["time"] is not None else 0.0
-#                 command = 1 if event["command"] == "Goto" else 0
-#                 pressed = 1 if event["pressed"] == "true" else 0
-#                 step = float(event["step"]) if event["step"] is not None else 0
-#                 if "cue" in event:
-#                     cue = list(map(float, event["cue"])) if event["cue"] else [0, 0, 0]
-
-#                 feature = [time, command, pressed, step] + cue
-#                 padded_features[i, k] = torch.tensor(feature, dtype=torch.float32)
-
-#     return padded_features
-
-
-# def get_timecode_embedding(filename):
-#     with open(filename, "r", encoding="utf-8") as file:
-#         data = json.load(file)
-#         # 每一行的内容依次为 [time command pressed step cue*3]
-#         features = preprocess_timecode(data)[0]
-#         print(features)
-#         print(features.shape)
-#         return features
-
-# def preprocess_cue(data):
-#     final_features = []
-#     max_sequence_length = 0
-#     for list in data:
-#         features = []
-#         for item in list:
-#             if "CueDatas" in item:
-#                 cue_datas = item["CueDatas"]
-#             else:
-#                 continue
-#             for cue in cue_datas:
-#                 fixture_id = int(cue["fixture_id"])
-#                 attribute_name = cue["attribute_name"]
-#                 if "value" in cue:
-#                     value = cue["value"]
-#                     if type(value) is not float:
-#                         value = 0
-#                     else:
-#                         value = float(value)
-#                 else:
-#                     value = 0
-#                 # 将attribute_name映射到整数
-#                 attribute_index = attribute_name_map.get(attribute_name, -1)
-#                 if attribute_index == -1:
-#                     raise ValueError(f"Unknown attribute_name: {attribute_name}")
-
-#                 # 组织特征：[fixture_id, attribute_index, value]
-#                 feature = [fixture_id, attribute_index, value]
-#                 features.append(feature)
-#                 max_sequence_length = max(max_sequence_length, len(features))
-
-#             final_features.append(features)
-
-#     for f in final_features:
-#         if len(f) < max_sequence_length:
-#             for i in range(max_sequence_length - len(f)):
-#                 f.append([0, 0, 0])
-#     # 转换为张量
-#     final_features = np.array(final_features)
-#     final_features = torch.tensor(final_features, dtype=torch.float32)
-
-#     return final_features
-
-# def get_cue_embedding(filename):
-#     with open(filename, "r", encoding="utf-8") as file:
-#         data = json.load(file)
-#         features = preprocess_cue(data)
-#         print(features)
-#         print(features.shape)
-#         return features
-
-
-if __name__ == "__main__":
-    # for item in os.listdir('../data/timecode_json'):
-    #     timecode_embedding = get_timecode_embedding('../data/timecode_json/' + item)
-    for item in os.listdir('../data/cue_json'):
-        print(item)
-        cue_embedding = get_cue_embedding('../data/cue_json/' + item)
-        exit()

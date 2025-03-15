@@ -1,9 +1,9 @@
 import json
 import os
 
-cue_path = '../data/cue_json'
-timecode_path = '../data/timecode_json'
-aligned_cue_path = '../data/cue_aligned'
+cue_path = '../data/train/cue_json'
+timecode_path = '../data/train/timecode_json'
+aligned_cue_path = '../data/train/cue_aligned'
 
 
 for item in os.listdir(timecode_path):
@@ -21,6 +21,8 @@ for item in os.listdir(timecode_path):
     cue_list = []
     time_list = []
     for item1 in timecode:
+        if 'cue' not in item1.keys():
+            continue
         cue_list.append(item1['cue'][2])
         time_list.append(item1['time'])
         
@@ -39,7 +41,6 @@ for item in os.listdir(timecode_path):
                     else:
                         final_cue_item['CueDatas'] = item2['CueDatas']
                     final_cue.append(final_cue_item)
-                    # break
 
     output_file_path = os.path.join(aligned_cue_path, file_name + '.json')
     with open(output_file_path, 'w') as output_file:
