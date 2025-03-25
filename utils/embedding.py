@@ -82,7 +82,6 @@ class Embedding():
     def __init__(self):
         pass
 
-    @staticmethod
     def preprocess_timecode(self, data):
         features = []
         max_sequence_length = 0
@@ -98,43 +97,20 @@ class Embedding():
                     command = 1 if event["command"] == "Goto" else 0
                     pressed = 1 if event["pressed"] == "true" else 0
                     step = float(event["step"]) if event["step"] is not None else 0
-                    if "cue" in event:
-                        cue = list(map(float, event["cue"])) if event["cue"] is not None else [0, 0, 0]
-
-                    feature = [time, command, pressed, step] + cue
+                    if "cue" in event and command == 1 and pressed == 1:
+                        cue = int(event["cue"][2]) if event["cue"] is not None else 0
+                    else:
+                        continue
+                    feature = [time, cue]
                     features.append(feature)
 
-        # Convert to tensor
-        features = np.array(features)
-        features = torch.tensor(features, dtype=torch.float32)
+        return torch.tensor(features, dtype = torch.int)
 
-        # Padding missing values
-        padded_features = torch.zeros((len(data), max_sequence_length, features.shape[1]))
-        for i, item in enumerate(data):
-            for j, subtrack in enumerate(item["Subtrack"]):
-                events = subtrack["Event"]
-                for k, event in enumerate(events):
-                    time = float(event["time"]) if event["time"] is not None else 0.0
-                    command = 1 if event["command"] == "Goto" else 0
-                    pressed = 1 if event["pressed"] == "true" else 0
-                    step = float(event["step"]) if event["step"] is not None else 0
-                    if "cue" in event:
-                        cue = list(map(float, event["cue"])) if event["cue"] else [0, 0, 0]
-
-                    feature = [time, command, pressed, step] + cue
-                    padded_features[i, k] = torch.tensor(feature, dtype=torch.float32)
-
-        return padded_features
-
-    @staticmethod
     def get_timecode_embedding(self, filename):
         with open(filename, "r", encoding="utf-8") as file:
             data = json.load(file)
-            features = Embedding.preprocess_timecode(data)[0]
-            print(features)
-            print(features.shape)
+            features = self.preprocess_timecode(data)
             return features
-
 
     def get_cue_embedding(self, filename):
         with open(filename, "r", encoding="utf-8") as file:
