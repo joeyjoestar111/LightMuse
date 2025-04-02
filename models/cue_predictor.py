@@ -2,7 +2,10 @@ from torchvggish.vggish import VGGish
 from torchvggish.audioset import vggish_input
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
+
+device = torch.device("cuda")
 
 class VGG(nn.Module):
     def __init__(self):
@@ -78,27 +81,70 @@ class CueDataPredictor(nn.Module):
         return x
 
 
-# 定义 Cue Sequence Predictor
-class CueSequencePredictor(nn.Module):
-    def __init__(self):
-        super(CueSequencePredictor, self).__init__()
-        self.vggish = VGGish()
-        self.classifier1 = Classifier(input_dim=128, output_dim=1)  # Flag: 是否有 cue
-        self.classifier2 = Classifier(input_dim=128, output_dim=1)  # Num: cue 的数量
-        self.mapper = Mapper(input_dim=512 + 2, output_dim=10)  # 假设 Cue Sequence 长度为 10
+# 加权的BCE Loss
+class WeightedBCELoss(nn.Module):
+    def __init__(self, pos_weight=10, device=None):  # 设置正类权重
+        super().__init__()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+        self.loss = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
 
-    def forward(self, x):
-        # Step 1: 提取 VGGish 特征
-        features = self.vggish(x)
+    def forward(self, logits, targets):
+        return self.loss(logits, targets)
 
-        # Step 2: 通过 Classifier1 和 Classifier2 获取 Flag 和 Num
-        flag = torch.sigmoid(self.classifier1(features))  # 输出范围在 [0, 1]
-        num = F.relu(self.classifier2(features))  # 确保数量非负
+def train_metadata_predictor(metadata_predictor, meta_dataloader, path):
+        metadata_criterion = WeightedBCELoss(pos_weight=10)
+        metadata_optimizer = torch.optim.Adam(metadata_predictor.parameters(), lr=0.001)
 
-        # Step 3: 将 Flag 和 Num 与 VGGish 特征拼接，输入到 Mapper
-        combined = torch.cat((features, flag, num), dim=1)
-        cue_sequence = self.mapper(combined)
+        # 训练 MetaDataPredictor
+        num_epochs = 1000
+        print("Training Metadata Predictor:")
+        best_loss = float('inf') 
+        for epoch in range(num_epochs):
+            epoch_loss = 0  
+            for batch_features, batch_labels in meta_dataloader:
+                batch_features = batch_features.to(device)
+                batch_labels = batch_labels.to(device)
+                outputs = metadata_predictor(batch_features)
+                loss = metadata_criterion(outputs, batch_labels)
+                
+                metadata_optimizer.zero_grad()
+                loss.backward()
+                metadata_optimizer.step()
+                
+                epoch_loss += loss.item() 
 
-        return cue_sequence
+            epoch_loss /= len(meta_dataloader) 
+            print(f"Epoch [{epoch+1}/{num_epochs}], Loss (metadata_predictor): {epoch_loss:.6f}")
+            if epoch_loss < best_loss:
+                best_loss = epoch_loss
+                torch.save(metadata_predictor.state_dict(), path)
+                print(f"New best model saved with Loss: {best_loss:.9f}")
 
-# 测试模型
+
+def train_cuedata_predictor(cuedata_predictor, cue_dataloader, path):
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(cuedata_predictor.parameters(), lr=0.005)
+
+    num_epochs = 10
+    print('Training Cuedata Predictor:')
+    best_loss = float('inf') 
+    for epoch in range(num_epochs):
+        epoch_loss = 0
+        for batch_inputs, batch_targets in cue_dataloader:
+            batch_inputs = batch_inputs.to(device)
+            batch_targets = batch_targets.to(device)
+            
+            optimizer.zero_grad()
+            outputs = cuedata_predictor(batch_inputs)
+            loss = criterion(outputs, batch_targets)
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item() 
+
+        epoch_loss /= len(cue_dataloader) 
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss (cuedata_predictor): {epoch_loss:.6f}")
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            torch.save(cuedata_predictor.state_dict(), path)
+            print(f"New best model saved with Loss: {best_loss:.6f}")
