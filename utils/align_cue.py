@@ -41,6 +41,7 @@ for item in os.listdir(timecode_path):
                     else:
                         final_cue_item['CueDatas'] = item2['CueDatas']
                     final_cue.append(final_cue_item)
+                    break
 
     output_file_path = os.path.join(aligned_cue_path, file_name + '.json')
     with open(output_file_path, 'w') as output_file:
