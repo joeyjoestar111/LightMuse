@@ -10,6 +10,7 @@ all_cue_path = '../data'
 timecode_output_path = '../data/processed_timecode'
 
 cnt = 0
+total_cnt = 0
 
 final_cue_list = []
 
@@ -33,9 +34,17 @@ for item in os.listdir(cue_path1):
                 if 'CueDatas' not in c[0].keys():
                     continue
                 cue_list.append(c[0]['CueDatas'])
-                
                 break
-    
+    # 统计所有数据
+    seen_numbers = set()
+    for c in cue:
+        number = c[0]['Number']['number']
+        if number not in seen_numbers:
+            # 如果未出现过，将其添加到集合中
+            seen_numbers.add(number)
+            # 增加计数器
+            total_cnt += 1
+        
     for item1 in cue_list:
         cnt += 1
         final_cue_item = {}
@@ -48,7 +57,7 @@ for item in os.listdir(cue_path1):
     with open(os.path.join(timecode_output_path, file_name+'.json'), 'w') as output_file:
         json.dump(timecode_list, output_file, indent=4)
 
-print(len(final_cue_list))
+print(len(final_cue_list), total_cnt)
 output_file_path = os.path.join(all_cue_path, 'cue_corpus.json')
 with open(output_file_path, 'w') as output_file:
     json.dump(final_cue_list, output_file, indent=4)

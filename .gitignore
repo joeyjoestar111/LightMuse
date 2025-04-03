@@ -1,0 +1,17 @@
+torchvggish/
+
+checkpoints/
+
+data/
+
+outputs/
+
+machine_learning/
+
+*.pyc
+__pycache__/
+
+.vscode/
+
+*.tmp
+*.log
